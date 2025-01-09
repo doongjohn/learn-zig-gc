@@ -6,8 +6,6 @@ pub const MarkSweepGc = struct {
     stack_start: usize,
     data_region: []u8,
     bss_region: []u8,
-    managed_heap: []u8,
-    fba: std.heap.FixedBufferAllocator,
     allocator: std.mem.Allocator,
     mark_list_allocator: std.mem.Allocator,
     mark_list: std.MultiArrayList(HeapObject),
@@ -23,8 +21,7 @@ pub const MarkSweepGc = struct {
         ptr: usize,
     };
 
-    pub inline fn init(stack_start: usize, managed_heap: []u8, mark_list_allocator: std.mem.Allocator) @This() {
-        var fba = std.heap.FixedBufferAllocator.init(managed_heap);
+    pub inline fn init(stack_start: usize, allocator: std.mem.Allocator, mark_list_allocator: std.mem.Allocator) @This() {
         var data_region: []u8 = &.{};
         var bss_region: []u8 = &.{};
 
@@ -63,9 +60,7 @@ pub const MarkSweepGc = struct {
             .stack_start = stack_start,
             .data_region = data_region,
             .bss_region = bss_region,
-            .managed_heap = managed_heap,
-            .fba = fba,
-            .allocator = fba.allocator(),
+            .allocator = allocator,
             .mark_list_allocator = mark_list_allocator,
             .mark_list = .{},
         };
@@ -75,12 +70,6 @@ pub const MarkSweepGc = struct {
         self.mark_list.deinit(self.mark_list_allocator);
     }
 
-    fn isPtrInManagedHeap(self: @This(), ptr: usize) bool {
-        const heap_start = @intFromPtr(self.managed_heap.ptr);
-        const heap_end = heap_start + self.managed_heap.len;
-        return ptr >= heap_start and ptr <= heap_end;
-    }
-
     fn mark(self: *@This(), region: []u8) void {
         const mark_list = self.mark_list.slice();
 
@@ -88,15 +77,14 @@ pub const MarkSweepGc = struct {
         while (iter.next()) |slice| {
             const value = std.mem.bytesToValue(usize, slice);
             // std.debug.print("{d}: {d}\n", .{@intFromPtr(slice.ptr), value});
-            if (self.isPtrInManagedHeap(value)) {
-                if (std.mem.indexOfScalar(usize, mark_list.items(.ptr), value)) |i| {
-                    if (!mark_list.items(.marked)[i]) {
-                        // std.debug.print("mark object: {d}\n", .{value});
-                        mark_list.items(.marked)[i] = true;
-                        if (mark_list.items(.size)[i] >= @sizeOf(usize)) {
-                            // traverse nested pointer
-                            self.mark(@as([*]u8, @ptrFromInt(value))[0..mark_list.items(.size)[i]]);
-                        }
+
+            if (std.mem.indexOfScalar(usize, mark_list.items(.ptr), value)) |i| {
+                if (!mark_list.items(.marked)[i]) {
+                    // std.debug.print("mark object: {d}\n", .{value});
+                    mark_list.items(.marked)[i] = true;
+                    if (mark_list.items(.size)[i] >= @sizeOf(usize)) {
+                        // traverse nested pointer
+                        self.mark(@as([*]u8, @ptrFromInt(value))[0..mark_list.items(.size)[i]]);
                     }
                 }
             }
@@ -109,11 +97,11 @@ pub const MarkSweepGc = struct {
         var i: usize = 0;
         while (i < self.mark_list.len) {
             if (mark_list.items(.marked)[i]) {
-                std.debug.print("found marked pointer: {d}\n", .{mark_list.items(.ptr)[i]});
+                // std.debug.print("found marked pointer: {d}\n", .{mark_list.items(.ptr)[i]});
                 mark_list.items(.marked)[i] = false;
                 i += 1;
             } else {
-                std.debug.print("deallocate pointer: {d}\n", .{mark_list.items(.ptr)[i]});
+                // std.debug.print("deallocate pointer: {d}\n", .{mark_list.items(.ptr)[i]});
 
                 // deallocate memory
                 const buf = @as([*]u8, @ptrFromInt(mark_list.items(.ptr)[i]))[0..mark_list.items(.size)[i]];

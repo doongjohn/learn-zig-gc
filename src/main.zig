@@ -59,14 +59,15 @@ var global_p1: *i32 = undefined;
 var global_p2: *i32 = undefined;
 
 pub fn main() !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    const allocator = gpa.allocator();
-    defer std.debug.assert(gpa.deinit() == .ok);
+    var gpa1: std.heap.GeneralPurposeAllocator(.{ .safety = false }) = .init;
+    const allocator = gpa1.allocator();
+    defer _ = gpa1.deinit();
 
-    const managed_heap = try allocator.alloc(u8, 10000);
-    defer allocator.free(managed_heap);
+    var gpa2: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    const mark_list_allocator = gpa2.allocator();
+    defer std.debug.assert(gpa2.deinit() == .ok);
 
-    var gc = MarkSweepGc.init(@frameAddress(), managed_heap, allocator);
+    var gc = MarkSweepGc.init(@frameAddress(), allocator, mark_list_allocator);
     defer gc.deinit();
 
     global_p1 = try gc.create(i32);
@@ -74,10 +75,12 @@ pub fn main() !void {
     std.debug.print("global_p1 addr: {d}\n", .{@intFromPtr(global_p1)});
     std.debug.print("global_p2 addr: {d}\n", .{@intFromPtr(global_p2)});
 
-    // I need to wrap the main function because @frameAddress on windows is not the first address of the stack frame.
-    // Wrapping the main function will allow marking the local variables.
-    // https://github.com/ziglang/zig/issues/18662
-    try @call(.never_inline, gcMain, .{&gc});
+    for (0..10) |_| {
+        // I need to wrap the main function because @frameAddress on windows is not the first address of the stack frame.
+        // Wrapping the main function will allow marking the local variables.
+        // https://github.com/ziglang/zig/issues/18662
+        try @call(.never_inline, gcMain, .{&gc});
 
-    gc.collect();
+        gc.collect();
+    }
 }
