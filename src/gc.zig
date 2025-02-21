@@ -105,7 +105,7 @@ pub const MarkSweepGc = struct {
 
                 // deallocate memory
                 const buf = @as([*]u8, @ptrFromInt(mark_list.items(.ptr)[i]))[0..mark_list.items(.size)[i]];
-                self.allocator.rawFree(buf, std.math.log2(mark_list.items(.alignment)[i]), @returnAddress());
+                self.allocator.rawFree(buf, std.mem.Alignment.fromByteUnits(mark_list.items(.alignment)[i]), @returnAddress());
 
                 // remove from make_list
                 _ = self.mark_list.swapRemove(i);
@@ -177,7 +177,7 @@ pub const MarkSweepGc = struct {
         const alignment = @alignOf(T);
         const size = @sizeOf(T);
         const ptr = try self.allocator.alignedAlloc(u8, alignment, size);
-        errdefer self.allocator.rawFree(@as([*]u8, @ptrCast(ptr))[0..size], std.math.log2(alignment), @returnAddress());
+        errdefer self.allocator.rawFree(@as([*]u8, @ptrCast(ptr))[0..size], std.mem.Alignment.fromByteUnits(alignment), @returnAddress());
 
         try self.mark_list.append(self.mark_list_allocator, .{
             .alignment = alignment,
